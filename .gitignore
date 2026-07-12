@@ -13,7 +13,7 @@ test-results/
 !.env.example
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
-storage/
+/storage/
 tmp/
 *.log
 .DS_Store

@@ -8,7 +8,9 @@
 playwright-report
 test-results
 tmp
-storage
+/storage
+!apps/api/src/modules/storage
+!apps/api/src/modules/storage/**
 *.log
 .env
 .env.*
