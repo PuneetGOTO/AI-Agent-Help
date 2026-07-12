@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 const DEV_ACCESS_SECRET = 'development-access-secret-change-in-production';
 const DEV_REFRESH_SECRET = 'development-refresh-secret-change-in-production';
 // Stable only so local encrypted rows remain readable after a restart. Production rejects this fallback.
@@ -20,6 +22,7 @@ export interface AppEnvironment {
   JWT_REFRESH_TTL_DAYS: number;
   ENCRYPTION_KEY: string;
   COOKIE_SECURE: boolean;
+  ALLOW_INSECURE_PUBLIC_HTTP: boolean;
   BOOTSTRAP_TOKEN?: string;
   OLLAMA_ALLOWED_BASE_URLS: string;
   BEDROCK_ALLOWED_ENDPOINTS: string;
@@ -62,6 +65,7 @@ export function validateEnvironment(
   const s3AccessKey = stringValue(raw.S3_ACCESS_KEY, 'minioadmin');
   const s3SecretKey = stringValue(raw.S3_SECRET_KEY, 'minioadmin-change-me');
   const cookieSecure = parseBoolean(raw.COOKIE_SECURE, false);
+  const allowInsecurePublicHttp = parseBoolean(raw.ALLOW_INSECURE_PUBLIC_HTTP, false);
   const bootstrapToken = optionalString(raw.BOOTSTRAP_TOKEN);
   const origins = webUrl.split(',').map((origin) => parseOrigin(origin));
   const ollamaAllowedBaseUrls = stringValue(
@@ -120,8 +124,16 @@ export function validateEnvironment(
       throw new Error('BOOTSTRAP_TOKEN must contain at least 32 characters when configured');
     }
     const onlyLoopbackOrigins = origins.every(isLoopbackOrigin);
-    if (!cookieSecure && !onlyLoopbackOrigins) {
-      throw new Error('COOKIE_SECURE must be true for non-loopback production origins');
+    const insecurePublicIpDeployment = isInsecurePublicIpDeployment(origins, cookieSecure);
+    if (allowInsecurePublicHttp && !insecurePublicIpDeployment) {
+      throw new Error(
+        'ALLOW_INSECURE_PUBLIC_HTTP is only valid for one explicit HTTP IP origin with COOKIE_SECURE=false',
+      );
+    }
+    if (!cookieSecure && !onlyLoopbackOrigins && !allowInsecurePublicHttp) {
+      throw new Error(
+        'COOKIE_SECURE must be true for non-loopback production origins unless explicit public IP HTTP mode is enabled',
+      );
     }
   }
 
@@ -147,6 +159,7 @@ export function validateEnvironment(
     JWT_REFRESH_TTL_DAYS: parseDurationDays(stringValue(raw.JWT_REFRESH_TTL, '7d')),
     ENCRYPTION_KEY: encryptionKey,
     COOKIE_SECURE: cookieSecure,
+    ALLOW_INSECURE_PUBLIC_HTTP: allowInsecurePublicHttp,
     BOOTSTRAP_TOKEN: bootstrapToken,
     OLLAMA_ALLOWED_BASE_URLS: ollamaAllowedBaseUrls.join(','),
     BEDROCK_ALLOWED_ENDPOINTS: bedrockAllowedEndpoints.join(','),
@@ -221,6 +234,12 @@ function parseOrigin(value: string): URL {
 
 function isLoopbackOrigin(url: URL): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+}
+
+function isInsecurePublicIpDeployment(origins: URL[], cookieSecure: boolean): boolean {
+  if (cookieSecure || origins.length !== 1 || origins[0]?.protocol !== 'http:') return false;
+  const hostname = origins[0].hostname.replace(/^\[|\]$/g, '');
+  return isIP(hostname) !== 0 && !isLoopbackOrigin(origins[0]);
 }
 
 function parseOllamaBaseUrl(value: string): string {

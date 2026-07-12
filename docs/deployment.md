@@ -58,6 +58,16 @@ curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scrip
   --admin-email owner@example.com --acme-email ops@example.com
 ```
 
+只有公網 IPv4、尚未配置網域時，可使用明確的臨時 HTTP 模式：
+
+```bash
+sudo bash scripts/deploy-ubuntu.sh --public-ip 38.76.163.32 --configure-ufw
+```
+
+此模式會把 Caddy 發布到 host TCP 80，Web/API 仍只存在 Docker private network 或 loopback；PostgreSQL、Redis、MinIO 與 API 4000 不會公開。`ALLOW_INSECURE_PUBLIC_HTTP=true` 只對單一 HTTP IP origin 有效，不能用來開放 HTTP 網域。由於 HTTP 無法保護登入密碼、refresh cookie、prompt 與文件內容，它只適合短期驗證，應儘快切換至 `--domain` HTTPS 模式。
+
+`--configure-ufw` 只加入所需 allow rules，不會自動啟用 UFW，以免鎖死既有 SSH。雲端 security group、VPC firewall 或供應商控制台仍需另外開放 inbound TCP 80；HTTPS 模式還需要 TCP/UDP 443。
+
 使用網域模式前，DNS 必須已指向伺服器，安全群組/防火牆必須允許 TCP 80/443 與 UDP 443。Caddy 將同源 `/api/v1/*` 直接代理到內部 API，並停用 SSE response buffering；其他路徑代理到 Web，因此 3000、4000、5432、6379、9000、9001 均不需公開。Ubuntu 腳本設定 `TRUST_PROXY_HOPS=1`，讓 rate limit/audit 使用 Caddy 傳入的原始 client IP；若再增加 CDN/LB，必須按實際拓撲調整跳數，不能設為無限制信任。
 
 管理員密碼不直接輸出到一般部署 log。新部署完成後讀取 root-only 檔案：
@@ -66,9 +76,9 @@ curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scrip
 sudo cat /var/lib/ai-agent-platform/admin-credentials
 ```
 
-常用選項：`--install-dir`、`--skip-docker-install`、`--skip-seed`、`--domain`、`--admin-email`、`--acme-email`。可透過 `ADMIN_PASSWORD`、`DEPLOY_TIMEOUT`、`MIN_FREE_GB`、`REPO_URL`、`REPO_BRANCH` 環境變數覆寫安全預設；不要把 `ADMIN_PASSWORD` 寫入 shell history 或 CI log。
+常用選項：`--install-dir`、`--skip-docker-install`、`--skip-seed`、`--domain`、`--public-ip`、`--configure-ufw`、`--admin-email`、`--acme-email`。可透過 `ADMIN_PASSWORD`、`DEPLOY_TIMEOUT`、`MIN_FREE_GB`、`REPO_URL`、`REPO_BRANCH` 環境變數覆寫安全預設；不要把 `ADMIN_PASSWORD` 寫入 shell history 或 CI log。
 
-更新現有 checkout 時，先在維護窗口內備份資料，再執行 `git pull --ff-only`，然後重跑腳本。腳本會執行已提交 migration 並保留 volumes。回滾 application image 前必須確認 migration 仍向後相容。
+更新現有 checkout 時，先在維護窗口內備份資料再重跑腳本。乾淨的 Git checkout 會自動對目前 `REPO_BRANCH` 執行 `git pull --ff-only`；偵測到 tracked/untracked 本機修改、detached HEAD 或其他分支時會 fail closed。從不具自動更新功能的舊版腳本升級時，需先手動執行一次 `git pull --ff-only`。腳本會執行已提交 migration 並保留 volumes。回滾 application image 前必須確認 migration 仍向後相容。
 
 `raw.githubusercontent.com/.../main` 適合首次人工安裝；正式自動化應把下載 URL 固定到已審查的 commit SHA，並驗證 checksum/signature，避免分支移動造成未審查程式以 root 執行。
 

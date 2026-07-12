@@ -15,6 +15,7 @@ data:
   JWT_ACCESS_TTL: 15m
   JWT_REFRESH_TTL: 7d
   COOKIE_SECURE: 'true'
+  ALLOW_INSECURE_PUBLIC_HTTP: 'false'
   S3_REGION: us-east-1
   S3_BUCKET: agent-platform-production
   S3_FORCE_PATH_STYLE: 'false'

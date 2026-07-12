@@ -89,7 +89,15 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - run: docker compose config --quiet
+      - name: Validate Compose deployment profiles
+        run: |
+          docker compose config --quiet
+          DEPLOY_DOMAIN=agents.example.com ACME_EMAIL=ops@example.com COOKIE_SECURE=true \
+            docker compose -f docker-compose.yml -f deploy/ubuntu/docker-compose.https.yml config --quiet
+          DEPLOY_PUBLIC_IP=38.76.163.32 WEB_URL=http://38.76.163.32 \
+            NEXT_PUBLIC_API_URL=http://38.76.163.32/api/v1 COOKIE_SECURE=false \
+            ALLOW_INSECURE_PUBLIC_HTTP=true \
+            docker compose -f docker-compose.yml -f deploy/ubuntu/docker-compose.public-http.yml config --quiet
 
   e2e:
     runs-on: ubuntu-latest

@@ -57,6 +57,38 @@ describe('validateEnvironment', () => {
     );
   });
 
+  it('allows only an explicit insecure HTTP IP deployment', () => {
+    expect(
+      validateEnvironment({
+        ...validProduction,
+        WEB_URL: 'http://38.76.163.32',
+        COOKIE_SECURE: 'false',
+        ALLOW_INSECURE_PUBLIC_HTTP: 'true',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        WEB_URL: 'http://38.76.163.32',
+        COOKIE_SECURE: false,
+        ALLOW_INSECURE_PUBLIC_HTTP: true,
+      }),
+    );
+    expect(() =>
+      validateEnvironment({
+        ...validProduction,
+        WEB_URL: 'http://38.76.163.32',
+        COOKIE_SECURE: 'false',
+      }),
+    ).toThrow('COOKIE_SECURE');
+    expect(() =>
+      validateEnvironment({
+        ...validProduction,
+        WEB_URL: 'http://agents.example.com',
+        COOKIE_SECURE: 'false',
+        ALLOW_INSECURE_PUBLIC_HTTP: 'true',
+      }),
+    ).toThrow('ALLOW_INSECURE_PUBLIC_HTTP');
+  });
+
   it('rejects malformed deployment-controlled Ollama allowlist entries', () => {
     expect(() =>
       validateEnvironment({

@@ -22,6 +22,7 @@ Organization/Workspace header、Provider/tool response、uploaded document、mod
 | 不安全預設值               | production 啟動拒絕範例 JWT/AES/DB secret、相同 JWT secret、public origin 非 Secure cookie                                                                  | Secret manager、KMS 與 release policy 仍是部署責任                                                                      |
 | 容器權限提升               | Docker USER node；Kubernetes runAsNonRoot、read-only rootfs、drop ALL、no service account token                                                             | 掃描/sign images，以 Pod Security Admission restricted 執行                                                             |
 | 流量竊聽                   | Kubernetes ingress TLS baseline；public production 強制 secure cookie；外部 S3 強制 HTTPS，Compose 內部 MinIO HTTP 需要明確旗標                             | DB/Redis/provider 全部使用 TLS；`S3_ALLOW_INSECURE_INTERNAL_ENDPOINT` 只可用於私有 Docker network；內部 mTLS 依合規需要 |
+| 臨時公網 IP HTTP           | 只有單一明確 IP origin、`COOKIE_SECURE=false` 與 `ALLOW_INSECURE_PUBLIC_HTTP=true` 同時成立才啟用；HTTP 網域仍拒絕                                          | 無 TLS，登入/Session/prompt 均可被竊聽或竄改；只供短期驗證，正式使用必須切換網域 HTTPS                                  |
 | 供應鏈                     | lockfile frozen install、CI verify、最小 GitHub permissions                                                                                                 | release 加 SBOM、signature、dependency/image scanning 與 digest pinning                                                 |
 
 ## SSRF 與工具執行

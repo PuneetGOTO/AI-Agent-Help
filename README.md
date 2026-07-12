@@ -76,6 +76,14 @@ curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scrip
   --admin-email owner@example.com --acme-email ops@example.com
 ```
 
+沒有網域時可明確啟用暫時性的公網 IPv4 HTTP 模式。此模式不具 TLS，登入密碼、Cookie 與對話流量可能被攔截，不應作為正式生產設定：
+
+```bash
+sudo bash scripts/deploy-ubuntu.sh --public-ip 38.76.163.32 --configure-ufw
+```
+
+仍需在雲端供應商的 security group/firewall 開放 inbound TCP 80；腳本只能新增主機 UFW 規則，不能修改雲端防火牆。
+
 腳本預設要求 Docker data root 至少有 15 GiB 可用空間，不會自動 prune、刪除 volume 或覆蓋既有 `.env`。完整選項與更新方式見 [Ubuntu 部署章節](docs/deployment.md#ubuntu-一鍵部署)。
 
 ## 管理員初始化
