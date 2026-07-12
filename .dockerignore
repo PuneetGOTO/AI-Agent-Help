@@ -1,0 +1,15 @@
+.git
+.github
+**/.next
+.pnpm-store
+**/coverage
+**/dist
+**/node_modules
+playwright-report
+test-results
+tmp
+storage
+*.log
+.env
+.env.*
+!.env.example

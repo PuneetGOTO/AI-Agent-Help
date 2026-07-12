@@ -1,0 +1,31 @@
+{
+  "name": "enterprise-agent-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @agent-platform/api --filter @agent-platform/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --filter @agent-platform/api --filter @agent-platform/web --filter @agent-platform/shared test",
+    "test:e2e": "pnpm --filter @agent-platform/e2e test:e2e",
+    "db:generate": "pnpm --filter @agent-platform/api prisma:generate",
+    "db:migrate": "pnpm --filter @agent-platform/api prisma:migrate",
+    "db:deploy": "pnpm --filter @agent-platform/api prisma:deploy",
+    "db:seed": "pnpm --filter @agent-platform/api prisma:seed",
+    "docker:compose": "node scripts/docker-compose.mjs",
+    "docker:up": "node scripts/docker-compose.mjs up -d --build",
+    "docker:down": "node scripts/docker-compose.mjs down",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.16"
+    }
+  }
+}

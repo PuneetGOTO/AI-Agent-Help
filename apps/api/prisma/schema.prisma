@@ -1,0 +1,586 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProviderType {
+  OPENAI
+  AZURE_OPENAI
+  ANTHROPIC
+  GOOGLE_GEMINI
+  AWS_BEDROCK
+  OLLAMA
+  OPENAI_COMPATIBLE
+}
+
+enum AgentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AgentVersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum MemoryMode {
+  NONE
+  SHORT_TERM
+  LONG_TERM
+}
+
+enum ToolType {
+  HTTP_REQUEST
+  WEBHOOK
+  DATABASE_QUERY
+  CUSTOM_FUNCTION
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  WAITING_APPROVAL
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum ApiKeyType {
+  PLATFORM
+  AGENT
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  name         String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships    OrganizationMembership[]
+  refreshSessions RefreshSession[]
+  invitationsSent Invitation[] @relation("InvitationSender")
+  auditLogs        AuditLog[] @relation("AuditActor")
+  apiKeysCreated   ApiKey[] @relation("ApiKeyCreator")
+  agentsCreated    Agent[] @relation("AgentCreator")
+  versionsCreated  AgentVersion[] @relation("AgentVersionCreator")
+  conversations    Conversation[]
+  approvedToolExecutions ToolExecution[] @relation("ToolExecutionApprover")
+
+  @@map("users")
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships OrganizationMembership[]
+  workspaces  Workspace[]
+  roles       Role[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+
+  @@map("organizations")
+}
+
+model Workspace {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @db.Uuid
+  name                 String
+  slug                 String
+  description          String?
+  monthlyBudgetUsd     Decimal? @db.Decimal(14, 6)
+  rateLimitPerMinute   Int      @default(60)
+  concurrentRunLimit   Int      @default(10)
+  retentionDays        Int      @default(90)
+  allowedToolDomains   String[] @default([])
+  piiMaskingEnabled    Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  providerConnections ProviderConnection[]
+  agents            Agent[]
+  tools             Tool[]
+  conversations     Conversation[]
+  usageRecords      UsageRecord[]
+  auditLogs         AuditLog[]
+  apiKeys           ApiKey[]
+  knowledgeBases    KnowledgeBase[]
+  agentRuns         AgentRun[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("workspaces")
+}
+
+model Permission {
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique
+  description String
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model Role {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  description    String?
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  RolePermission[]
+  memberships  OrganizationMembership[]
+  invitations  Invitation[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId       String @db.Uuid
+  permissionId String @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model OrganizationMembership {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  roleId         String   @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_memberships")
+}
+
+model Invitation {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  email          String
+  roleId         String           @db.Uuid
+  tokenHash      String           @unique
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  invitedById    String           @db.Uuid
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy    User         @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status])
+  @@index([email])
+  @@map("invitations")
+}
+
+model RefreshSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("refresh_sessions")
+}
+
+model ProviderConnection {
+  id                    String       @id @default(uuid()) @db.Uuid
+  workspaceId           String       @db.Uuid
+  name                  String
+  type                  ProviderType
+  baseUrl               String?
+  credentialsEncrypted  String       @db.Text
+  credentialFingerprint String
+  config                Json?
+  isEnabled             Boolean      @default(true)
+  lastValidatedAt       DateTime?
+  lastValidationError   String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AgentVersion[]
+  runs      AgentRun[]
+  usageRecords UsageRecord[]
+  embeddingKnowledgeBases KnowledgeBase[] @relation("KnowledgeEmbeddingProvider")
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, type])
+  @@map("provider_connections")
+}
+
+model Agent {
+  id                 String      @id @default(uuid()) @db.Uuid
+  workspaceId        String      @db.Uuid
+  name               String
+  slug               String
+  description        String?
+  icon               String?
+  tags               String[]    @default([])
+  status             AgentStatus @default(DRAFT)
+  publishedVersionId String?     @unique @db.Uuid
+  createdById        String      @db.Uuid
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?
+
+  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy        User          @relation("AgentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  versions         AgentVersion[] @relation("AgentVersions")
+  publishedVersion AgentVersion? @relation("PublishedAgentVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+  conversations    Conversation[]
+  apiKeys          ApiKey[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, status, deletedAt])
+  @@map("agents")
+}
+
+model AgentVersion {
+  id                     String             @id @default(uuid()) @db.Uuid
+  agentId                String             @db.Uuid
+  version                Int
+  status                 AgentVersionStatus @default(DRAFT)
+  providerConnectionId   String             @db.Uuid
+  model                  String
+  systemPrompt           String             @db.Text
+  temperature            Float              @default(0.3)
+  maxTokens              Int                @default(2048)
+  timeoutMs              Int                @default(60000)
+  retryCount             Int                @default(1)
+  streamEnabled          Boolean            @default(true)
+  structuredOutputSchema Json?
+  memoryMode             MemoryMode         @default(SHORT_TERM)
+  budgetUsd              Decimal?           @db.Decimal(14, 6)
+  changeNote             String?
+  createdById            String             @db.Uuid
+  publishedAt            DateTime?
+  createdAt              DateTime           @default(now())
+
+  agent             Agent               @relation("AgentVersions", fields: [agentId], references: [id], onDelete: Cascade)
+  providerConnection ProviderConnection  @relation(fields: [providerConnectionId], references: [id], onDelete: Restrict)
+  createdBy         User                @relation("AgentVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  tools             AgentVersionTool[]
+  knowledgeBases    AgentVersionKnowledgeBase[]
+  publishedByAgents Agent[]             @relation("PublishedAgentVersion")
+  runs              AgentRun[]
+
+  @@unique([agentId, version])
+  @@index([agentId, status])
+  @@index([providerConnectionId])
+  @@map("agent_versions")
+}
+
+model Tool {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @db.Uuid
+  name              String
+  slug              String
+  description       String
+  type              ToolType
+  inputSchema       Json
+  config            Json
+  requiresApproval  Boolean  @default(false)
+  timeoutMs         Int      @default(10000)
+  retryCount        Int      @default(0)
+  isEnabled         Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AgentVersionTool[]
+  executions ToolExecution[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, isEnabled])
+  @@map("tools")
+}
+
+model AgentVersionTool {
+  agentVersionId String @db.Uuid
+  toolId         String @db.Uuid
+
+  agentVersion AgentVersion @relation(fields: [agentVersionId], references: [id], onDelete: Cascade)
+  tool         Tool         @relation(fields: [toolId], references: [id], onDelete: Restrict)
+
+  @@id([agentVersionId, toolId])
+  @@map("agent_version_tools")
+}
+
+model AgentVersionKnowledgeBase {
+  agentVersionId String @db.Uuid
+  knowledgeBaseId String @db.Uuid
+
+  agentVersion AgentVersion @relation(fields: [agentVersionId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Restrict)
+
+  @@id([agentVersionId, knowledgeBaseId])
+  @@map("agent_version_knowledge_bases")
+}
+
+model Conversation {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  agentId     String   @db.Uuid
+  userId      String?  @db.Uuid
+  title       String?
+  isShared    Boolean  @default(false)
+  shareTokenHash String? @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  messages  Message[]
+  runs      AgentRun[]
+
+  @@index([workspaceId, updatedAt])
+  @@index([agentId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(uuid()) @db.Uuid
+  conversationId String      @db.Uuid
+  role           MessageRole
+  content        String      @db.Text
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model AgentRun {
+  id                   String    @id @default(uuid()) @db.Uuid
+  workspaceId          String    @db.Uuid
+  conversationId       String?   @db.Uuid
+  agentVersionId       String    @db.Uuid
+  providerConnectionId String    @db.Uuid
+  status               RunStatus @default(QUEUED)
+  inputPreview         String?
+  outputPreview        String?
+  errorCode            String?
+  errorMessage         String?
+  latencyMs            Int?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime  @default(now())
+
+  workspace          Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation       Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  agentVersion       AgentVersion        @relation(fields: [agentVersionId], references: [id], onDelete: Restrict)
+  providerConnection ProviderConnection  @relation(fields: [providerConnectionId], references: [id], onDelete: Restrict)
+  toolExecutions     ToolExecution[]
+  usageRecords       UsageRecord[]
+
+  @@index([workspaceId, createdAt])
+  @@index([conversationId])
+  @@map("agent_runs")
+}
+
+model ToolExecution {
+  id          String    @id @default(uuid()) @db.Uuid
+  agentRunId  String    @db.Uuid
+  toolId      String    @db.Uuid
+  status      RunStatus @default(QUEUED)
+  input       Json
+  output      Json?
+  errorMessage String?
+  latencyMs   Int?
+  approvedById String?  @db.Uuid
+  providerCallId String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  tool     Tool     @relation(fields: [toolId], references: [id], onDelete: Restrict)
+  approvedBy User?  @relation("ToolExecutionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([agentRunId])
+  @@index([toolId, createdAt])
+  @@map("tool_executions")
+}
+
+model UsageRecord {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspaceId          String   @db.Uuid
+  agentRunId           String?  @db.Uuid
+  providerConnectionId String   @db.Uuid
+  model                 String
+  inputTokens           Int      @default(0)
+  outputTokens          Int      @default(0)
+  totalTokens           Int      @default(0)
+  costUsd               Decimal  @default(0) @db.Decimal(14, 8)
+  latencyMs             Int?
+  createdAt             DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentRun AgentRun?   @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  providerConnection ProviderConnection @relation(fields: [providerConnectionId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+  @@index([providerConnectionId, model, createdAt])
+  @@map("usage_records")
+}
+
+model ApiKey {
+  id          String     @id @default(uuid()) @db.Uuid
+  workspaceId String     @db.Uuid
+  agentId     String?    @db.Uuid
+  createdById String     @db.Uuid
+  name        String
+  prefix      String
+  keyHash     String     @unique
+  type        ApiKeyType @default(PLATFORM)
+  scopes      String[]   @default([])
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime   @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent     Agent?    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("ApiKeyCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, revokedAt])
+  @@map("api_keys")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  workspaceId    String?  @db.Uuid
+  actorUserId    String?  @db.Uuid
+  action         String
+  resourceType   String
+  resourceId     String?
+  ipAddress      String?
+  userAgent      String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  actor        User?        @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}
+
+model KnowledgeBase {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  name        String
+  description String?
+  embeddingProviderConnectionId String? @db.Uuid
+  embeddingModel String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  embeddingProviderConnection ProviderConnection? @relation("KnowledgeEmbeddingProvider", fields: [embeddingProviderConnectionId], references: [id], onDelete: SetNull)
+  documents Document[]
+  agentVersions AgentVersionKnowledgeBase[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("knowledge_bases")
+}
+
+model Document {
+  id              String         @id @default(uuid()) @db.Uuid
+  knowledgeBaseId String         @db.Uuid
+  name            String
+  objectKey       String
+  mimeType        String
+  sizeBytes       Int
+  status          DocumentStatus @default(PENDING)
+  errorMessage    String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  chunks KnowledgeChunk[]
+
+  @@index([knowledgeBaseId, status])
+  @@map("documents")
+}
+
+model KnowledgeChunk {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @db.Uuid
+  sequence   Int
+  content    String   @db.Text
+  tokenCount Int
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, sequence])
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
