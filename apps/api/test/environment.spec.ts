@@ -18,7 +18,19 @@ const validProduction = {
 describe('validateEnvironment', () => {
   it('accepts non-placeholder production secrets', () => {
     expect(validateEnvironment(validProduction)).toEqual(
-      expect.objectContaining({ NODE_ENV: 'production', COOKIE_SECURE: true }),
+      expect.objectContaining({ NODE_ENV: 'production', COOKIE_SECURE: true, TRUST_PROXY_HOPS: 0 }),
+    );
+  });
+
+  it('validates the deployment-controlled trusted proxy hop count', () => {
+    expect(validateEnvironment({ ...validProduction, TRUST_PROXY_HOPS: '1' })).toEqual(
+      expect.objectContaining({ TRUST_PROXY_HOPS: 1 }),
+    );
+    expect(() => validateEnvironment({ ...validProduction, TRUST_PROXY_HOPS: '-1' })).toThrow(
+      'TRUST_PROXY_HOPS',
+    );
+    expect(() => validateEnvironment({ ...validProduction, TRUST_PROXY_HOPS: '11' })).toThrow(
+      'TRUST_PROXY_HOPS',
     );
   });
 
@@ -100,6 +112,28 @@ describe('validateEnvironment', () => {
         WEB_URL: 'http://localhost:3000',
         COOKIE_SECURE: 'false',
         S3_ENDPOINT: 'http://objects.example.com',
+      }),
+    ).toThrow('S3_ENDPOINT');
+  });
+
+  it('allows an explicit internal MinIO HTTP endpoint for public Compose deployments', () => {
+    expect(
+      validateEnvironment({
+        ...validProduction,
+        S3_ENDPOINT: 'http://minio:9000',
+        S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: 'true',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        S3_ENDPOINT: 'http://minio:9000',
+        S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: true,
+      }),
+    );
+    expect(() =>
+      validateEnvironment({
+        ...validProduction,
+        S3_ENDPOINT: 'http://objects.example.com',
+        S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: 'true',
       }),
     ).toThrow('S3_ENDPOINT');
   });

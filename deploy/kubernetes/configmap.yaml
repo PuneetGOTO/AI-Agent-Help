@@ -6,6 +6,7 @@ metadata:
 data:
   NODE_ENV: production
   API_PORT: '4000'
+  TRUST_PROXY_HOPS: '1'
   WEB_PORT: '3000'
   WEB_URL: https://agents.example.com
   API_URL: https://agents.example.com
@@ -17,6 +18,7 @@ data:
   S3_REGION: us-east-1
   S3_BUCKET: agent-platform-production
   S3_FORCE_PATH_STYLE: 'false'
+  S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: 'false'
   OPENAI_BASE_URL: https://api.openai.com/v1
   OPENAI_DEFAULT_MODEL: gpt-4.1-mini
   # Leave empty unless exact deployment-approved Ollama endpoints are required.

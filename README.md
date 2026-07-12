@@ -53,6 +53,31 @@ pnpm docker:compose -- ps
 
 `docker:compose` 包裝器在 Windows 工作區路徑含非 ASCII 字元時會建立指向同一目錄的暫時 ASCII junction，以避開 Docker Desktop build-session 限制；Linux/macOS 會直接執行原生 `docker compose`。Web/API 與基礎設施預設只綁定 loopback，需要區域網存取時才顯式調整 `WEB_BIND_ADDRESS`/`API_BIND_ADDRESS`。
 
+## Ubuntu 一鍵部署
+
+支援 Ubuntu 的部署腳本會安裝官方 Docker Engine/Compose plugin、產生高強度 secrets、建立 root-only `.env`、建置並啟動服務、執行 migration/seed，以及等待 API/Web 健康檢查。預設安全模式只綁定 `127.0.0.1`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scripts/deploy-ubuntu.sh | sudo bash
+sudo cat /var/lib/ai-agent-platform/admin-credentials
+```
+
+從工作站建立 tunnel 後開啟 <http://localhost:3000>：
+
+```bash
+ssh -L 3000:127.0.0.1:3000 USER@SERVER
+```
+
+公開部署必須先把 DNS A/AAAA 指向伺服器並開放 TCP 80/443、UDP 443；指定網域後腳本會啟用 Caddy 自動 HTTPS：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scripts/deploy-ubuntu.sh | \
+  sudo bash -s -- --domain agents.example.com \
+  --admin-email owner@example.com --acme-email ops@example.com
+```
+
+腳本預設要求 Docker data root 至少有 15 GiB 可用空間，不會自動 prune、刪除 volume 或覆蓋既有 `.env`。完整選項與更新方式見 [Ubuntu 部署章節](docs/deployment.md#ubuntu-一鍵部署)。
+
 ## 管理員初始化
 
 有兩種互斥且可重複檢查的方式：

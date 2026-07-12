@@ -14,9 +14,63 @@ Production 啟動會 fail closed：拒絕範例 JWT/AES/資料庫密碼、相同
 
 Gemini Developer API 使用加密儲存的 API key。Gemini Vertex 模式使用 workload identity / Google Application Default Credentials，Provider 記錄只保存 project ID 與 location；Kubernetes、VM 或本機執行環境需另行配置最小權限 IAM，禁止將 service-account JSON 放入 Provider 公開 config。
 
+Compose 使用內部 `http://minio:9000` 時會顯式設定 `S3_ALLOW_INSECURE_INTERNAL_ENDPOINT=true`。此例外只接受 `minio`/loopback 等內部主機名；外部 S3 endpoint 即使開啟旗標仍必須使用精確 HTTPS origin。Kubernetes 與受管 S3 預設保持 `false`。
+
 `NEXT_PUBLIC_API_URL` 會在 Next.js build 時寫入 browser bundle，不能包含 secret，也不能期待在已建置 image 啟動時才變更。server-side rewrite 目的地使用 `API_PROXY_URL`/`API_URL`。
 
 本地 E2E 若使用 `E2E_MOCK_PROVIDER_URL=http://127.0.0.1:4010/v1`，啟動 API 前也要把同一精確 URL 放入 `OLLAMA_ALLOWED_BASE_URLS`；CI 已預設設定。真實 Anthropic/Gemini/Bedrock canary 必須只由受保護 CI secret 注入，不能提交 credential。
+
+## Ubuntu 一鍵部署
+
+腳本支援 Ubuntu、systemd 與 apt，適用於單機 Compose baseline。它會：
+
+- 在缺少 Docker 時加入 Docker 官方 apt repository，安裝 Engine、Buildx 與 Compose plugin；若偵測到會衝突的 Ubuntu Docker/containerd 套件則 fail closed，不會擅自移除既有 workload 套件。
+- 在新部署產生 PostgreSQL、MinIO、JWT、AES 與管理員高熵憑證；新舊 `.env` 均強制修復為 `root:root 0600`，因此腳本必須以 root 執行。
+- 在建置前檢查 system filesystem 與 Docker data root 空間；預設 Docker root 至少需要 15 GiB。
+- 在耗時 build 前檢查 Web/API/PostgreSQL/Redis/MinIO 與可選 Caddy 的 host ports；同一 Compose 專案已運行時允許安全重跑。
+- 執行 `docker compose config`、image build、migration、seed 與健康檢查。
+- 重跑時保留既有 `.env`、資料 volumes 與管理員密碼；不執行 prune 或 `down -v`。
+- Compose stateful/proxy images 與 Dockerfile Node base 使用 multi-architecture digest 固定；升級時需在 CI 掃描後更新 digest，不能只把 tag 改回 `latest`。
+
+在已 clone 的 repository 中執行：
+
+```bash
+sudo bash scripts/deploy-ubuntu.sh
+```
+
+或從空白 Ubuntu 主機下載執行，腳本會 clone `main` 到 `/opt/ai-agent-help`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scripts/deploy-ubuntu.sh | sudo bash
+```
+
+預設所有 host ports 綁定 `127.0.0.1`。從管理工作站建立 SSH tunnel：
+
+```bash
+ssh -L 3000:127.0.0.1:3000 USER@SERVER
+```
+
+網域 HTTPS 模式：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PuneetGOTO/AI-Agent-Help/main/scripts/deploy-ubuntu.sh | \
+  sudo bash -s -- --domain agents.example.com \
+  --admin-email owner@example.com --acme-email ops@example.com
+```
+
+使用網域模式前，DNS 必須已指向伺服器，安全群組/防火牆必須允許 TCP 80/443 與 UDP 443。Caddy 將同源 `/api/v1/*` 直接代理到內部 API，並停用 SSE response buffering；其他路徑代理到 Web，因此 3000、4000、5432、6379、9000、9001 均不需公開。Ubuntu 腳本設定 `TRUST_PROXY_HOPS=1`，讓 rate limit/audit 使用 Caddy 傳入的原始 client IP；若再增加 CDN/LB，必須按實際拓撲調整跳數，不能設為無限制信任。
+
+管理員密碼不直接輸出到一般部署 log。新部署完成後讀取 root-only 檔案：
+
+```bash
+sudo cat /var/lib/ai-agent-platform/admin-credentials
+```
+
+常用選項：`--install-dir`、`--skip-docker-install`、`--skip-seed`、`--domain`、`--admin-email`、`--acme-email`。可透過 `ADMIN_PASSWORD`、`DEPLOY_TIMEOUT`、`MIN_FREE_GB`、`REPO_URL`、`REPO_BRANCH` 環境變數覆寫安全預設；不要把 `ADMIN_PASSWORD` 寫入 shell history 或 CI log。
+
+更新現有 checkout 時，先在維護窗口內備份資料，再執行 `git pull --ff-only`，然後重跑腳本。腳本會執行已提交 migration 並保留 volumes。回滾 application image 前必須確認 migration 仍向後相容。
+
+`raw.githubusercontent.com/.../main` 適合首次人工安裝；正式自動化應把下載 URL 固定到已審查的 commit SHA，並驗證 checksum/signature，避免分支移動造成未審查程式以 root 執行。
 
 ## Docker Compose
 

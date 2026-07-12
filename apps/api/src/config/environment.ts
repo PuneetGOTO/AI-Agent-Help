@@ -6,10 +6,12 @@ const DEV_ENCRYPTION_KEY = 'ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzItYnl0ZSE=';
 export interface AppEnvironment {
   NODE_ENV: string;
   API_PORT: number;
+  TRUST_PROXY_HOPS: number;
   WEB_URL: string;
   DATABASE_URL: string;
   REDIS_URL: string;
   S3_ENDPOINT?: string;
+  S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: boolean;
   S3_ACCESS_KEY: string;
   S3_SECRET_KEY: string;
   JWT_ACCESS_SECRET: string;
@@ -56,6 +58,7 @@ export function validateEnvironment(
   );
   const redisUrl = stringValue(raw.REDIS_URL, 'redis://localhost:6379');
   const s3Endpoint = optionalString(raw.S3_ENDPOINT);
+  const allowInsecureInternalS3 = parseBoolean(raw.S3_ALLOW_INSECURE_INTERNAL_ENDPOINT, false);
   const s3AccessKey = stringValue(raw.S3_ACCESS_KEY, 'minioadmin');
   const s3SecretKey = stringValue(raw.S3_SECRET_KEY, 'minioadmin-change-me');
   const cookieSecure = parseBoolean(raw.COOKIE_SECURE, false);
@@ -108,7 +111,11 @@ export function validateEnvironment(
     if (s3AccessKey === 'minioadmin' || /minioadmin|change-me|replace_me/i.test(s3SecretKey)) {
       throw new Error('Production S3 credentials must not use example values');
     }
-    validateS3Endpoint(s3Endpoint, true, origins.every(isLoopbackOrigin));
+    validateS3Endpoint(
+      s3Endpoint,
+      true,
+      origins.every(isLoopbackOrigin) || allowInsecureInternalS3,
+    );
     if (bootstrapToken && bootstrapToken.length < 32) {
       throw new Error('BOOTSTRAP_TOKEN must contain at least 32 characters when configured');
     }
@@ -122,10 +129,16 @@ export function validateEnvironment(
     ...raw,
     NODE_ENV: nodeEnv,
     API_PORT: Number(raw.API_PORT ?? 4000),
+    TRUST_PROXY_HOPS: parseIntegerInRange(raw.TRUST_PROXY_HOPS, 0, 0, 10, 'TRUST_PROXY_HOPS'),
     WEB_URL: origins.map((origin) => origin.origin).join(','),
     DATABASE_URL: databaseUrl,
     REDIS_URL: validateRedisUrl(redisUrl),
-    S3_ENDPOINT: validateS3Endpoint(s3Endpoint, production, origins.every(isLoopbackOrigin)),
+    S3_ENDPOINT: validateS3Endpoint(
+      s3Endpoint,
+      production,
+      origins.every(isLoopbackOrigin) || allowInsecureInternalS3,
+    ),
+    S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: allowInsecureInternalS3,
     S3_ACCESS_KEY: s3AccessKey,
     S3_SECRET_KEY: s3SecretKey,
     JWT_ACCESS_SECRET: accessSecret,
@@ -160,6 +173,24 @@ function parseBoolean(value: unknown, fallback: boolean): boolean {
     throw new Error('Boolean environment values must be true or false');
   }
   return normalized === 'true';
+}
+
+function parseIntegerInRange(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+  name: string,
+): number {
+  const normalized = stringValue(value, String(fallback));
+  if (!/^(0|[1-9]\d*)$/.test(normalized)) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  return parsed;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -249,7 +280,7 @@ function validateRedisUrl(value: string): string {
 function validateS3Endpoint(
   value: string | undefined,
   production: boolean,
-  localDeployment = false,
+  allowInternalHttp = false,
 ): string | undefined {
   if (!value) return undefined;
   let url: URL;
@@ -259,7 +290,7 @@ function validateS3Endpoint(
     throw new Error('S3_ENDPOINT must be a valid HTTP(S) origin');
   }
   const localHttpAllowed =
-    localDeployment && url.protocol === 'http:' && isLocalS3Hostname(url.hostname);
+    allowInternalHttp && url.protocol === 'http:' && isLocalS3Hostname(url.hostname);
   if (
     !['http:', 'https:'].includes(url.protocol) ||
     (production && url.protocol !== 'https:' && !localHttpAllowed) ||
@@ -270,7 +301,7 @@ function validateS3Endpoint(
     url.hash
   ) {
     throw new Error(
-      'S3_ENDPOINT must be an exact HTTPS origin for public production deployments without credentials, path, query, or hash',
+      'S3_ENDPOINT must be an exact HTTPS origin, or an explicitly allowed internal MinIO HTTP origin, without credentials, path, query, or hash',
     );
   }
   return url.origin;

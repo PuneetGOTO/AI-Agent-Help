@@ -1,6 +1,7 @@
 import { Logger, LogLevel, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -9,9 +10,12 @@ import { HttpExceptionFilter } from './common/http/http-exception.filter';
 import { requestIdMiddleware } from './common/http/request-id.middleware';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+  const trustProxyHops = config.get<number>('TRUST_PROXY_HOPS', 0);
+
+  if (trustProxyHops > 0) app.set('trust proxy', trustProxyHops);
 
   const logLevels: LogLevel[] = ['log', 'error', 'warn'];
   if (config.get('NODE_ENV') === 'development') logLevels.push('debug');

@@ -2,7 +2,7 @@ name: enterprise-agent-platform
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-agent_platform}
@@ -22,7 +22,7 @@ services:
       - backend
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99}
     restart: unless-stopped
     command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
     ports:
@@ -38,7 +38,7 @@ services:
       - backend
 
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:-minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -59,7 +59,7 @@ services:
       - backend
 
   minio-init:
-    image: minio/mc:latest
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727}
     restart: 'no'
     depends_on:
       minio:
@@ -91,10 +91,12 @@ services:
     environment: &api-environment
       NODE_ENV: production
       API_PORT: 4000
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       WEB_URL: ${WEB_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-agent_platform}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-agent_platform}?schema=public
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
+      S3_ALLOW_INSECURE_INTERNAL_ENDPOINT: ${S3_ALLOW_INSECURE_INTERNAL_ENDPOINT:-true}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_BUCKET: ${S3_BUCKET:-agent-platform}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
